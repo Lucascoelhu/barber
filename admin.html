@@ -1327,20 +1327,27 @@ async function excluirBloqueioDireto(id) {
     if (bId) q = q.where("barbeiroId", "==", bId);
     if (dataFiltro) q = q.where("data", "==", dataFiltro);
 
-    q = q.orderBy("data", "asc").orderBy("hora", "asc");
-
+    // Ordenação feita no JS para evitar necessidade de índice composto no Firestore
     q.onSnapshot(snap => {
+        // Ordena os docs por data e hora localmente
+        const docs = [];
+        snap.forEach(doc => docs.push(doc));
+        docs.sort((a, b) => {
+            const dA = `${a.data().data}_${a.data().hora}`;
+            const dB = `${b.data().data}_${b.data().hora}`;
+            return dA.localeCompare(dB);
+        });
         render.innerHTML = "";
-        if (snap.empty) {
+        if (docs.length === 0) {
             render.innerHTML = `<div style="text-align: center; padding: 40px 20px; color: var(--text-dim);"><span style="font-size: 3rem; display: block; margin-bottom: 10px;">📅</span><b style="color: var(--primary); font-size: 0.9rem; text-transform: uppercase;">Sem agendamentos</b></div>`;
             return;
         }
 
         const agora = new Date();
-        const hojeISO = agora.toLocaleDateString('en-CA');
+        const hojeISO = agora.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
         let ultimaDataRenderizada = "";
 
-        snap.forEach(doc => {
+        docs.forEach(doc => {
             const ag = doc.data();
             const fone = ag.whatsapp ? ag.whatsapp.replace(/\D/g, '') : "";
             const nomeExibicao = ag.barbeiroNome || barbeirosNomes[ag.barbeiroId] || "Não definido";
