@@ -440,7 +440,18 @@
                 <div class="card">
                     <div class="premium-badge">PREMIUM</div>
                     <h3>Assinatura</h3>
-                    <p id="txt-restam" style="font-weight: 800; color: var(--primary); margin-bottom: 15px;">Calculando...</p>
+                    <p id="txt-restam" style="font-weight: 800; color: var(--primary); margin-bottom: 10px;">Calculando...</p>
+                    <div id="datas-assinatura" style="display:none; background:#1a1a1a; border-radius:12px; padding:12px 16px; margin-bottom:15px; border:1px solid #2a2a2a;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <span style="font-size:0.6rem; color:#777; font-weight:800; text-transform:uppercase;">Início</span>
+                            <span id="txt-data-inicio" style="font-size:0.8rem; color:#fff; font-weight:700;">—</span>
+                        </div>
+                        <div style="height:1px; background:#2a2a2a; margin-bottom:8px;"></div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-size:0.6rem; color:#777; font-weight:800; text-transform:uppercase;">Expira em</span>
+                            <span id="txt-data-expira" style="font-size:0.8rem; font-weight:700;">—</span>
+                        </div>
+                    </div>
                     <input type="text" id="input-codigo-ativacao" placeholder="Código de 30 dias + dias restantes">
                     <button class="btn-action" onclick="validarCodigoAtivacao()">Ativar</button>
                 </div>
@@ -1146,25 +1157,49 @@ async function excluirBloqueioDireto(id) {
         try {
             const doc = await db.collection("configuracao").doc("assinatura").get();
             const txtRestam = document.getElementById('txt-restam');
+            const divDatas = document.getElementById('datas-assinatura');
+            const txtInicio = document.getElementById('txt-data-inicio');
+            const txtExpira = document.getElementById('txt-data-expira');
+
+            const formatarData = (d) => {
+                return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            };
             
             if(doc.exists) {
                 const venc = doc.data().premiumAte.toDate();
                 const agora = new Date();
                 const resta = Math.ceil((venc - agora) / (1000 * 60 * 60 * 24));
+
+                // Calcula a data de início (data de expiração - total de dias acumulados desde hoje)
+                // Usa dataInicio salva no banco, ou calcula retroativamente
+                let dataInicio;
+                if (doc.data().premiumDesde) {
+                    dataInicio = doc.data().premiumDesde.toDate();
+                } else {
+                    // Estima: início = vencimento - 30 dias (fallback)
+                    dataInicio = new Date(venc.getTime() - 30 * 24 * 60 * 60 * 1000);
+                }
+
+                divDatas.style.display = 'block';
+                txtInicio.textContent = formatarData(dataInicio);
+                txtExpira.textContent = formatarData(venc);
                 
                 if (resta > 0) {
                     assinaturaAtiva = true;
                     txtRestam.innerText = `Vence em ${resta} dias`;
                     txtRestam.style.color = "var(--success)";
+                    txtExpira.style.color = "var(--success)";
                 } else {
                     assinaturaAtiva = false;
                     txtRestam.innerText = "Assinatura Expirada";
                     txtRestam.style.color = "var(--danger)";
+                    txtExpira.style.color = "var(--danger)";
                     bloquearSistema();
                 }
             } else {
                 assinaturaAtiva = false;
                 txtRestam.innerText = "Sem assinatura ativa";
+                divDatas.style.display = 'none';
                 bloquearSistema();
             }
         } catch (e) {
@@ -1222,9 +1257,12 @@ async function excluirBloqueioDireto(id) {
                 const novaDataFinal = new Date(dataBase.getTime() + novos30Dias);
 
                 // 3. Atualiza o banco de dados
-                await assinaRef.set({ 
-                    premiumAte: novaDataFinal 
-                }, { merge: true });
+                const updateData = { premiumAte: novaDataFinal };
+                // Salva premiumDesde apenas se for a primeira ativação (sem assinatura ativa ainda)
+                if (!assinaSnap.exists || !assinaSnap.data().premiumAte || assinaSnap.data().premiumAte.toDate() <= agora) {
+                    updateData.premiumDesde = agora;
+                }
+                await assinaRef.set(updateData, { merge: true });
 
                 await docRef.update({ usado: true, dataUso: agora });
 
